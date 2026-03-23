@@ -184,3 +184,62 @@ def run_evaluation() -> dict:
 
 if __name__ == "__main__":
     run_evaluation()
+
+# =========================
+# MULTI-DATASET EXTENSION
+# =========================
+
+import pandas as pd
+from src.models.credit_model import prepare_data, train_models, evaluate_model
+from sklearn.model_selection import train_test_split
+
+print("\n--- MULTI-DATASET COMPARISON ---")
+
+# ---------- German Dataset ----------
+german = pd.read_csv("data/processed/german_credit_clean.csv")
+
+X, y, _, _ = prepare_data(german)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+lr, rf, scaler = train_models(X_train, y_train)
+
+g_lr_metrics, _, _ = evaluate_model(lr, X_test, y_test, "LR-German", scaler)
+g_rf_metrics, _, _ = evaluate_model(rf, X_test, y_test, "RF-German")
+
+print("\nGerman Dataset Results:")
+print(g_lr_metrics)
+print(g_rf_metrics)
+
+
+# ---------- Lending Club Dataset ----------
+lending = pd.read_csv("data/processed/lendingclub_clean.csv")
+
+# ⚠️ IMPORTANT: adjust target column
+if "loan_status" in lending.columns:
+    lending["target"] = lending["loan_status"]
+elif "default" in lending.columns:
+    lending["target"] = lending["default"]
+else:
+    lending["target"] = lending.iloc[:, -1]
+
+# Convert categorical
+lending = pd.get_dummies(lending, drop_first=True)
+
+X_l = lending.drop(columns=["target"])
+y_l = lending["target"]
+
+X_train_l, X_test_l, y_train_l, y_test_l = train_test_split(
+    X_l, y_l, test_size=0.2, random_state=42
+)
+
+lr_l, rf_l, scaler_l = train_models(X_train_l, y_train_l)
+
+l_lr_metrics, _, _ = evaluate_model(lr_l, X_test_l, y_test_l, "LR-Lending", scaler_l)
+l_rf_metrics, _, _ = evaluate_model(rf_l, X_test_l, y_test_l, "RF-Lending")
+
+print("\nLending Club Dataset Results:")
+print(l_lr_metrics)
+print(l_rf_metrics)
