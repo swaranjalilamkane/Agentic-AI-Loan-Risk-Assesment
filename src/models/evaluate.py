@@ -201,7 +201,10 @@ if __name__ == "__main__":
         lending["target"] = lending["loan_status"]
     elif "default" in lending.columns:
         lending["target"] = lending["default"]
+    elif "credit_risk" in lending.columns:
+        lending["target"] = (lending["credit_risk"] == 1).astype(int)
     else:
+        print("⚠️ No clear target column found — using last column")
         lending["target"] = lending.iloc[:, -1]
 
     lending = pd.get_dummies(lending, drop_first=True)
