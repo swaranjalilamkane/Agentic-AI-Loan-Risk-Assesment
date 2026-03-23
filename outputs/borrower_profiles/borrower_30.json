@@ -20,6 +20,7 @@
     "telephone": "yes",
     "foreign_worker": "yes",
     "credit_risk": 1,
+    "_range_flag": false,
     "age_group": "(30, 40]",
     "credit_amount_per_duration": 106.27777777777776,
     "credit_per_person": 1913.0
