@@ -32,15 +32,10 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 FEATURE_DIR = "outputs/features"
 MODEL_DIR = "outputs/models"
-
-# Columns that carry demographic information used for fairness evaluation.
-# We keep them in the dataset as features but also extract them for auditing.
-PROTECTED_COLS = ["personal_status_sex", "age"]
 
 
 # ---------------------------------------------------------------------------
