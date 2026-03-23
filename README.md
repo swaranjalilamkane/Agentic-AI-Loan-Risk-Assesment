@@ -180,6 +180,28 @@ Output saved to `outputs/reports/evaluation_report.json`.
 
 ---
 
+## Week 4: ML Model Evaluation & Fairness Analysis
+
+In Week 4, we trained and evaluated two machine learning models: Logistic Regression and Random Forest for credit risk prediction.
+
+### Model Performance
+Both models were evaluated using standard classification metrics such as precision, recall, and AUC-ROC. The models demonstrated strong predictive capability in identifying high-risk borrowers.
+
+### Fairness Analysis
+To ensure ethical and unbiased decision-making, fairness metrics were evaluated:
+
+- Demographic Parity Difference: 0.2199 (Bias Detected)
+- Equalized Odds Difference: 0.0455 (Acceptable)
+
+The analysis revealed that younger applicants (≤25) had a lower approval rate (~51%) compared to older applicants (>25) with ~73% approval rate. This indicates potential bias in approval distribution across age groups.
+
+### Key Insight
+While the model performs well in prediction accuracy, there is a trade-off between performance and fairness. This highlights the importance of fairness-aware model evaluation in financial decision systems.
+
+### Output Artifacts
+- Evaluation report: `outputs/reports/evaluation_report.json`
+- Trained models stored in: `outputs/models/`
+
 ## Upcoming
 
 - **Task 5** — SHAP explainability module + RAG pipeline for policy compliance
