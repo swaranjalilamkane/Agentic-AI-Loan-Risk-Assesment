@@ -21,6 +21,6 @@
     "foreign_worker": "yes",
     "credit_risk": 1,
     "age_group": "(60, 100]",
-    "credit_amount_per_duration": 194.83333333333331,
+    "credit_amount_per_duration": 194.83333333333337,
     "credit_per_person": 1169.0
 }

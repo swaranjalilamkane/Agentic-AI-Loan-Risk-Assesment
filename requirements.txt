@@ -1,4 +1,17 @@
+# Core data science
 pandas
 numpy
-python-dotenv
+scikit-learn
+
+# Plaid API (v8+)
 plaid-python
+
+# Environment management
+python-dotenv
+
+# Explainability (Task 5)
+shap
+
+# Visualisation (reports + SHAP plots)
+matplotlib
+seaborn

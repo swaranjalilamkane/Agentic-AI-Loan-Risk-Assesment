@@ -1,18 +1,24 @@
 from src.data_integration.datasets import run_pipeline as run_datasets
 from src.data_integration.feature_engineering import build_features
 from src.data_integration.build_borrower_profile import create_profiles
+from src.models.evaluate import run_evaluation
+
 
 def main():
-    print("Step 1/3: Cleaning datasets...")
+    print("Step 1/4: Cleaning datasets...")
     run_datasets()
 
-    print("Step 2/3: Feature engineering...")
+    print("\nStep 2/4: Feature engineering...")
     build_features()
 
-    print("Step 3/3: Building borrower profiles...")
+    print("\nStep 3/4: Building borrower profiles...")
     create_profiles()
 
-    print("✅ Pipeline completed successfully!")
+    print("\nStep 4/4: Training credit risk models and evaluating fairness...")
+    run_evaluation()
+
+    print("\n✅ Pipeline completed successfully!")
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,45 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment variables (never commit secrets)
+.env
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Datasets (large files — download separately)
+data/raw/
+data/processed/
+
+# Model artifacts
+outputs/models/
+
+# Generated outputs (reproducible from pipeline)
+outputs/features/
+outputs/borrower_profiles/
+outputs/reports/
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Logs
+*.log
+
+.claude/
