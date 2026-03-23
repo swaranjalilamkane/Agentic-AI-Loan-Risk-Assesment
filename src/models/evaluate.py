@@ -183,6 +183,7 @@ def run_evaluation() -> dict:
 
 
 if __name__ == "__main__":
+    # Run existing German dataset pipeline
     run_evaluation()
 
     # =========================
@@ -194,21 +195,38 @@ if __name__ == "__main__":
     from sklearn.model_selection import train_test_split
     from src.models.credit_model import train_models, evaluate_model
 
+    # Load dataset
     lending = pd.read_csv("data/processed/lendingclub_clean.csv")
 
-    # target handling
+    # -------------------------
+    # TARGET HANDLING (FIXED)
+    # -------------------------
+    print("\nLending dataset columns:\n", lending.columns)
+
     if "loan_status" in lending.columns:
         lending["target"] = lending["loan_status"]
+
     elif "default" in lending.columns:
         lending["target"] = lending["default"]
+
     elif "credit_risk" in lending.columns:
         lending["target"] = (lending["credit_risk"] == 1).astype(int)
-    else:
-        print("⚠️ No clear target column found — using last column")
-        lending["target"] = lending.iloc[:, -1]
 
+    else:
+        target_col = lending.columns[-1]
+        print(f"⚠️ Using last column as target: {target_col}")
+        lending["target"] = lending[target_col]
+
+    print("✅ Target column created:", "target" in lending.columns)
+
+    # -------------------------
+    # ENCODING
+    # -------------------------
     lending = pd.get_dummies(lending, drop_first=True)
 
+    # -------------------------
+    # SPLIT
+    # -------------------------
     X = lending.drop(columns=["target"])
     y = lending["target"]
 
@@ -216,11 +234,20 @@ if __name__ == "__main__":
         X, y, test_size=0.2, random_state=42
     )
 
+    # -------------------------
+    # TRAIN
+    # -------------------------
     lr, rf, scaler = train_models(X_train, y_train)
 
+    # -------------------------
+    # EVALUATE
+    # -------------------------
     lr_metrics, _, _ = evaluate_model(lr, X_test, y_test, "LR-Lending", scaler)
     rf_metrics, _, _ = evaluate_model(rf, X_test, y_test, "RF-Lending")
 
+    # -------------------------
+    # PRINT RESULTS
+    # -------------------------
     print("\nLending Club Results:")
-    print(lr_metrics)
-    print(rf_metrics)
+    print("\nLogistic Regression:", lr_metrics)
+    print("\nRandom Forest:", rf_metrics)
