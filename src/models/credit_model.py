@@ -1,5 +1,5 @@
 """
-Credit risk ML models – Task 4.
+Credit risk ML models - Task 4.
 
 Trains two classifiers on the German Credit dataset:
   1. Logistic Regression  (class_weight='balanced')
@@ -58,6 +58,13 @@ def prepare_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, dict, list[
     # Drop the interval age_group column (use raw age instead)
     if "age_group" in df.columns:
         df = df.drop(columns=["age_group"])
+
+    # Drop validation artifact columns (prefixed with _) — these are
+    # internal pipeline flags, not borrower attributes, and must never
+    # be used as model features (data leakage).
+    artifact_cols = [c for c in df.columns if c.startswith("_")]
+    if artifact_cols:
+        df = df.drop(columns=artifact_cols)
 
     # Binarise target: 1 (bad) → 1 (default), 2 (good) → 0 (no default)
     df["target"] = (df["credit_risk"] == 1).astype(int)

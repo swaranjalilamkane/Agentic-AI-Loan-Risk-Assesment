@@ -1,5 +1,5 @@
 """
-Fairness evaluation module – Task 4.
+Fairness evaluation module - Task 4.
 
 Implements two standard fairness metrics used in fair lending research:
 
