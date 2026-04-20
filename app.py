@@ -387,20 +387,36 @@ if borrower_idx >= n_borrowers:
     st.warning(f"Index {borrower_idx} out of range. Test set has {n_borrowers} borrowers.")
     st.stop()
 
-# Build explanation on the fly
-from src.models.explain_borrower import explain_borrower
+# Run the multi-agent orchestrator (Task 6):
+#   Data Retrieval → Risk Assessment → Explanation Generator
+from src.agents import Orchestrator
 
-result = explain_borrower(
-    shap_values     = m["shap_vals"][borrower_idx],
-    raw_row         = raw_test.iloc[borrower_idx],
-    feature_names   = fn,
-    base_value      = m["base_value"],
-    predicted_prob  = m["probs"][borrower_idx],
-    predicted_label = int(m["preds"][borrower_idx]),
-    actual_label    = int(y_test.iloc[borrower_idx]),
-    borrower_id     = borrower_idx,
-    top_n           = top_n,
+orchestrator = Orchestrator()
+agent_state  = orchestrator.run(
+    borrower_id   = borrower_idx,
+    model         = model_key,
+    top_n_factors = top_n,
 )
+
+if agent_state.errors:
+    for err in agent_state.errors:
+        st.error(f"Agent error: {err}")
+    st.stop()
+
+# Re-build the per-factor dict the rest of the UI expects
+result = {
+    "probability":        agent_state.default_probability,
+    "risk_level":         agent_state.risk_level,
+    "decision":           agent_state.decision + (
+        " (predicted default)" if agent_state.decision == "REJECTED"
+        else " (predicted good credit)"
+    ),
+    "actual_label":       agent_state.actual_label,
+    "risk_factors":       agent_state.risk_factors,
+    "protective_factors": agent_state.protective_factors,
+    "factors_detail":     agent_state.shap_report,
+    "narrative":          agent_state.narrative,
+}
 
 prob        = result["probability"]
 risk_level  = result["risk_level"]

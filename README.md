@@ -8,7 +8,7 @@ An Agentic AI Framework for Multi-Source Loan Risk Assessment and Fair Lending D
 
 | # | Objective | Status |
 |---|-----------|--------|
-| 1 | Multi-agent architecture (Data Retrieval, Risk Assessment, Explanation Generator) | In Progress |
+| 1 | Multi-agent architecture (Data Retrieval, Risk Assessment, Explanation Generator) | Done |
 | 2 | Heterogeneous data integration via MCP (Plaid + datasets) | Done |
 | 3 | Fair and bias-aware credit scoring models | Done |
 | 4 | Explainable AI with SHAP + human-readable borrower explanations | Done |
@@ -209,6 +209,13 @@ Output saved to `outputs/reports/evaluation_report.json`.
 │   │   ├── evaluate.py
 │   │   ├── shap_explainer.py        # global + local SHAP plots
 │   │   └── explain_borrower.py      # SHAP → plain-English narratives
+│   ├── agents/                       # Multi-agent orchestrator (Task 6)
+│   │   ├── base.py                  # BaseAgent + AgentState contract
+│   │   ├── context.py               # Cached shared artifacts (models + SHAP)
+│   │   ├── data_retrieval_agent.py
+│   │   ├── risk_assessment_agent.py
+│   │   ├── explanation_agent.py
+│   │   └── orchestrator.py          # Pipeline driver + CLI
 │   └── utils/
 │       ├── config.py
 │       └── logger.py
@@ -298,7 +305,87 @@ streamlit run app.py
 
 ---
 
+---
+
+## Week 6: Multi-Agent Orchestrator (Task 6)
+
+A lightweight, custom agentic framework that coordinates three specialised agents in a sequential pipeline. Each agent has a single responsibility, a standard contract (`run(state) → state`), and participates in a shared `AgentState` that flows through the pipeline.
+
+### Pipeline
+
+```
+┌──────────────────────┐     ┌─────────────────────────┐     ┌──────────────────────────┐
+│ Data Retrieval Agent │ ──▶ │ Risk Assessment Agent   │ ──▶ │ Explanation Generator    │
+│  fetches profile     │     │  predicts P(default)    │     │  SHAP → plain English    │
+│  (CSV / Plaid)       │     │  + fairness threshold   │     │  risk + protective lists │
+└──────────────────────┘     └─────────────────────────┘     └──────────────────────────┘
+                        AgentState flows through all three
+```
+
+| Agent | File | Responsibility |
+|-------|------|----------------|
+| `DataRetrievalAgent` | `src/agents/data_retrieval_agent.py` | Fetches borrower's raw profile. Supports the German Credit test set (default) and has a stub for Plaid-backed retrieval. |
+| `RiskAssessmentAgent` | `src/agents/risk_assessment_agent.py` | Runs the trained RF/LR classifier, applies the group-specific fairness threshold from `outputs/models/fairness_thresholds.json`, assigns a risk level. |
+| `ExplanationAgent` | `src/agents/explanation_agent.py` | Uses pre-computed SHAP values to build ranked risk/protective factor lists + a plain-English narrative. |
+
+### Orchestrator features
+
+- **Observability** — every agent invocation is captured in `state.agent_trace` with status + elapsed_ms.
+- **Error resilience** — failures are caught, recorded with tracebacks, and halt downstream agents (`stop_on_error=True`).
+- **Cached context** — models + SHAP values are loaded once per process via `@lru_cache` in `src/agents/context.py`, so subsequent invocations are ~1 ms instead of ~200 ms.
+- **No external dependencies** — pure-Python, no LangChain / LangGraph, fully auditable for a course project.
+
+### CLI
+
+```bash
+# Run the full 3-agent pipeline for one borrower (RF model)
+python -m src.agents.orchestrator 100
+
+# Use Logistic Regression instead
+python -m src.agents.orchestrator 100 --lr
+
+# Save the full AgentState (profile + decision + narrative + trace) to JSON
+python -m src.agents.orchestrator 100 --save outputs/reports/decision_100.json
+```
+
+Example output:
+
+```
+ Agent Execution Trace:
+ Agent                       Status     Time (ms)
+ data_retrieval_agent        success        183.9
+ risk_assessment_agent       success          0.5
+ explanation_agent           success          0.4
+
+ Final Decision:
+   Borrower ID          : #100
+   Default probability  : 90.7%
+   Risk level           : Very High Risk
+   Decision             : REJECTED
+   Fairness threshold   : 0.510  (personal_status_sex=male : single)
+   Ground truth         : Default
+```
+
+### Programmatic usage
+
+```python
+from src.agents import Orchestrator
+
+orch  = Orchestrator()
+state = orch.run(borrower_id=100, model="rf")
+
+print(state.decision)              # "REJECTED"
+print(state.default_probability)   # 0.9068
+print(state.narrative)             # full English explanation
+print(state.agent_trace)           # step-by-step timing
+```
+
+### Dashboard integration
+
+The Streamlit dashboard (`app.py`) now drives its decisions through the orchestrator. A new **Agent Pipeline Trace** panel shows the three cards (Data Retrieval / Risk Assessment / Explanation Generator), each with its own status badge + execution time, plus the fairness threshold applied for that borrower.
+
+---
+
 ## Upcoming
 
-- **Task 6** — Multi-agent orchestrator (Data Retrieval → Risk Assessment → Explanation Generator)
 - **Task 7** — Full benchmark evaluation report and final presentation
