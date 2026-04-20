@@ -14,6 +14,13 @@ import streamlit as st
 # ── path fix so src/ is importable ──────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 
+# ── auto-load .env so Plaid creds reach os.getenv() without shell sourcing ──
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # ── page config (must be first Streamlit call) ───────────────────────────────
 st.set_page_config(
     page_title="SAAi – Agentic AI Loan Risk Assessment",
@@ -320,19 +327,104 @@ with st.sidebar:
         </div>
         <div style="padding:0 0 4px 0;font-size:0.65rem;font-weight:700;
                     text-transform:uppercase;letter-spacing:0.1em;color:#546e7a;">
+            Data Source
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    data_source = st.radio(
+        "Choose data source",
+        options=["German Credit (test set)", "Plaid Live (sandbox)"],
+        index=0,
+        label_visibility="collapsed",
+        help=(
+            "German Credit = cached 250-row test set, ground truth known.\n"
+            "Plaid Live    = pull a fresh borrower's bank data from the "
+            "Plaid sandbox and score it against the trained model."
+        ),
+    )
+    is_plaid = data_source.startswith("Plaid")
+
+    st.markdown(
+        """
+        <div style="padding:14px 0 4px 0;font-size:0.65rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:0.1em;color:#546e7a;">
             Borrower Lookup
         </div>
         """,
         unsafe_allow_html=True,
     )
-    borrower_idx = st.number_input(
-        "Borrower Index (test set)",
-        min_value=0,
-        max_value=249,
-        value=0,
-        step=1,
-        help="The German Credit test set has 250 borrowers (index 0–249).",
-    )
+
+    # ── CSV mode controls ───────────────────────────────────────────────────
+    borrower_idx = 0
+    application_form: dict = {}
+    institution_choice = "ins_109508"
+    fetch_clicked = False
+
+    if not is_plaid:
+        borrower_idx = st.number_input(
+            "Borrower Index (test set)",
+            min_value=0,
+            max_value=249,
+            value=0,
+            step=1,
+            help="The German Credit test set has 250 borrowers (index 0–249).",
+        )
+    else:
+        # ── Plaid mode controls: application form + institution rotation ──
+        st.caption("Application form (sent with Plaid bank data)")
+        application_form = {
+            "amount":   st.number_input("Loan amount ($)",
+                                         min_value=500, max_value=50000,
+                                         value=5000, step=500),
+            "duration": st.number_input("Duration (months)",
+                                         min_value=6, max_value=72,
+                                         value=24, step=6),
+            "age":      st.number_input("Age", min_value=18, max_value=90,
+                                         value=35, step=1),
+            "purpose":  st.selectbox(
+                "Purpose",
+                options=[
+                    "car (new)", "car (used)", "furniture/equipment",
+                    "radio/television", "domestic appliances", "repairs",
+                    "education", "vacation", "retraining", "business",
+                    "other purpose",
+                ],
+                index=10,
+            ),
+            "personal_status_sex": st.selectbox(
+                "Personal status / sex",
+                options=[
+                    "male : single",
+                    "male : divorced/separated",
+                    "male : married/widowed",
+                    "female : divorced/separated/married",
+                ],
+                index=0,
+            ),
+        }
+
+        institution_choice = st.selectbox(
+            "Sandbox institution",
+            options=["auto-rotate",
+                     "ins_109508 (First Platypus)",
+                     "ins_3 (Chase)",
+                     "ins_4 (Wells Fargo)",
+                     "ins_5 (Bank of America)",
+                     "ins_6 (Citi)"],
+            index=0,
+            help=(
+                "auto-rotate cycles through sandbox institutions each click "
+                "so every fetch is a new synthetic borrower."
+            ),
+        )
+
+        # The actual button that triggers a fetch
+        fetch_clicked = st.button(
+            "🔄  Fetch new Plaid record",
+            width="stretch",
+            type="primary",
+        )
 
     model_choice = st.radio(
         "Model",
@@ -383,20 +475,94 @@ raw_test   = artifacts["raw_test"]
 y_test     = artifacts["y_test"]
 n_borrowers = len(raw_test)
 
-if borrower_idx >= n_borrowers:
-    st.warning(f"Index {borrower_idx} out of range. Test set has {n_borrowers} borrowers.")
-    st.stop()
-
-# Run the multi-agent orchestrator (Task 6):
-#   Data Retrieval → Risk Assessment → Explanation Generator
+# ── orchestrator run — branch on data source ────────────────────────────────
 from src.agents import Orchestrator
+from src.agents.data_retrieval_agent import DataRetrievalAgent
+from src.agents.risk_assessment_agent import RiskAssessmentAgent
+from src.agents.explanation_agent import ExplanationAgent
 
-orchestrator = Orchestrator()
-agent_state  = orchestrator.run(
-    borrower_id   = borrower_idx,
-    model         = model_key,
-    top_n_factors = top_n,
-)
+# Sandbox institutions to rotate through in "auto-rotate" mode
+_PLAID_INSTITUTIONS = ["ins_109508", "ins_3", "ins_4", "ins_5", "ins_6"]
+
+if not is_plaid:
+    # ─── CSV path (unchanged) ─────────────────────────────────────────────
+    if borrower_idx >= n_borrowers:
+        st.warning(
+            f"Index {borrower_idx} out of range. "
+            f"Test set has {n_borrowers} borrowers."
+        )
+        st.stop()
+
+    orchestrator = Orchestrator()
+    agent_state  = orchestrator.run(
+        borrower_id   = borrower_idx,
+        model         = model_key,
+        top_n_factors = top_n,
+    )
+
+else:
+    # ─── Plaid Live path ──────────────────────────────────────────────────
+    if not (os.getenv("PLAID_CLIENT_ID") and os.getenv("PLAID_SECRET")):
+        st.error(
+            "🔑 PLAID_CLIENT_ID / PLAID_SECRET are not set.\n\n"
+            "Add them to your `.env` file (or shell export them) and reload "
+            "the page. Dashboard → Team Settings → Keys."
+        )
+        st.stop()
+
+    # Click counter used for auto-rotate AND cache-busting
+    if "plaid_click_count" not in st.session_state:
+        st.session_state.plaid_click_count = 0
+    if fetch_clicked:
+        st.session_state.plaid_click_count += 1
+        st.session_state.pop("plaid_agent_state", None)  # force refetch
+
+    # Resolve institution id (strip the "(Name)" suffix)
+    if institution_choice.startswith("auto-rotate"):
+        inst_id = _PLAID_INSTITUTIONS[
+            st.session_state.plaid_click_count % len(_PLAID_INSTITUTIONS)
+        ]
+    else:
+        inst_id = institution_choice.split()[0]   # e.g. "ins_109508"
+
+    # Need a cached state — run the pipeline if no cache or user asked for it
+    needs_run = (
+        fetch_clicked
+        or "plaid_agent_state" not in st.session_state
+        or st.session_state.get("plaid_model") != model_key
+        or st.session_state.get("plaid_top_n") != top_n
+        or st.session_state.get("plaid_form") != application_form
+        or st.session_state.get("plaid_inst") != inst_id
+    )
+
+    if needs_run:
+        if "plaid_agent_state" not in st.session_state:
+            st.info(
+                "Click **🔄 Fetch new Plaid record** in the sidebar to pull "
+                "a fresh borrower from the Plaid sandbox and score them."
+            )
+        with st.spinner(f"Calling Plaid sandbox ({inst_id}) and running agents…"):
+            orchestrator = Orchestrator(agents=[
+                DataRetrievalAgent(
+                    source         = "plaid",
+                    application    = application_form,
+                    institution_id = inst_id,
+                ),
+                RiskAssessmentAgent(),
+                ExplanationAgent(),
+            ])
+            agent_state = orchestrator.run(
+                borrower_id   = 0,      # unused for Plaid but required by state
+                model         = model_key,
+                top_n_factors = top_n,
+            )
+        st.session_state.plaid_agent_state = agent_state
+        st.session_state.plaid_model       = model_key
+        st.session_state.plaid_top_n       = top_n
+        st.session_state.plaid_form        = dict(application_form)
+        st.session_state.plaid_inst        = inst_id
+    else:
+        agent_state = st.session_state.plaid_agent_state
 
 if agent_state.errors:
     for err in agent_state.errors:
@@ -428,11 +594,27 @@ actual      = result["actual_label"]
 col_id, col_gauge, col_metrics = st.columns([1.6, 1.8, 2.6])
 
 with col_id:
+    if not is_plaid:
+        id_label = f"#{borrower_idx}"
+        id_sub = (
+            f"<div style='font-size:0.8rem;color:#78909c;margin-top:6px;'>"
+            f"Ground truth: <b style=\"color:{'#c62828' if actual==1 else '#2e7d32'};\">"
+            f"{'Default' if actual==1 else 'Good Credit'}</b></div>"
+        )
+    else:
+        id_label = f"LIVE #{st.session_state.plaid_click_count}"
+        id_sub = (
+            f"<div style='font-size:0.8rem;color:#78909c;margin-top:6px;'>"
+            f"Institution: <b style='color:#455a64;'>"
+            f"{st.session_state.get('plaid_inst', '—')}</b></div>"
+            f"<div style='font-size:0.75rem;color:#90a4ae;margin-top:4px;'>"
+            f"Source: <b style='color:#1976d2;'>Plaid Sandbox</b></div>"
+        )
     st.markdown(
         f"""
         <div class="metric-card" style="height:100%;min-height:220px;">
           <div class="metric-title">Borrower</div>
-          <div class="metric-value" style="color:#1565c0;">#{borrower_idx}</div>
+          <div class="metric-value" style="color:#1565c0;">{id_label}</div>
           <div style="margin-top:14px;">
             {'<span class="badge-rejected">⚠ REJECTED</span>'
              if is_rejected
@@ -441,12 +623,7 @@ with col_id:
           <div style="margin-top:14px;font-size:0.8rem;color:#78909c;">
             Model: <b style="color:#455a64;">{model_choice}</b>
           </div>
-          <div style="font-size:0.8rem;color:#78909c;margin-top:6px;">
-            Ground truth:
-            <b style="color:{'#c62828' if actual==1 else '#2e7d32'};">
-              {'Default' if actual==1 else 'Good Credit'}
-            </b>
-          </div>
+          {id_sub}
         </div>
         """,
         unsafe_allow_html=True,
@@ -465,17 +642,28 @@ with col_metrics:
     protective_factors = result["protective_factors"]
     top_risk   = risk_factors[0]["factor"]   if risk_factors   else "—"
     top_safe   = protective_factors[0]["factor"] if protective_factors else "—"
-    # Compare model prediction against historical ground truth
-    pred_correct = (is_rejected and actual == 1) or (not is_rejected and actual == 0)
-    if pred_correct:
-        correct_label    = "✓ Correct"
-        correct_subtitle = ("True Positive" if is_rejected else "True Negative")
+
+    if not is_plaid:
+        # Compare model prediction against historical ground truth
+        pred_correct = (is_rejected and actual == 1) or (not is_rejected and actual == 0)
+        if pred_correct:
+            correct_label    = "✓ Correct"
+            correct_subtitle = ("True Positive" if is_rejected else "True Negative")
+        else:
+            correct_label    = "✗ Incorrect"
+            # False Positive: rejected someone who would have paid back
+            # False Negative: approved someone who actually defaulted
+            correct_subtitle = ("False Positive" if is_rejected else "False Negative")
+        correct_color = "#2e7d32" if pred_correct else "#c62828"
+        correct_title = "Prediction vs Ground Truth"
     else:
-        correct_label    = "✗ Incorrect"
-        # False Positive: rejected someone who would have paid back
-        # False Negative: approved someone who actually defaulted
-        correct_subtitle = ("False Positive" if is_rejected else "False Negative")
-    correct_color = "#2e7d32" if pred_correct else "#c62828"
+        # No ground truth for live Plaid — show the decision threshold used
+        thr   = agent_state.fairness_threshold_used
+        grp   = agent_state.group_for_threshold or "default"
+        correct_label    = f"{thr:.2f}" if thr is not None else "0.50"
+        correct_subtitle = f"Fairness threshold ({grp})"
+        correct_color    = "#1565c0"
+        correct_title    = "Decision Threshold"
 
     c1, c2 = st.columns(2)
     with c1:
@@ -500,7 +688,7 @@ with col_metrics:
         st.markdown(
             f"""
             <div class="metric-card" style="margin-bottom:12px;">
-              <div class="metric-title">Prediction vs Ground Truth</div>
+              <div class="metric-title">{correct_title}</div>
               <div class="metric-value" style="font-size:1.05rem;color:{correct_color};">
                 {correct_label}
               </div>
@@ -597,31 +785,89 @@ with col_wf:
     st.plotly_chart(fig_bar, width="stretch", config={"displayModeBar": False})
 
 with col_raw:
-    st.markdown(
-        '<div class="section-header">📋 &nbsp;Borrower Profile</div>',
-        unsafe_allow_html=True,
-    )
-    raw_row = raw_test.iloc[borrower_idx]
+    if not is_plaid:
+        st.markdown(
+            '<div class="section-header">📋 &nbsp;Borrower Profile</div>',
+            unsafe_allow_html=True,
+        )
+        raw_row = raw_test.iloc[borrower_idx]
 
-    # Select informative columns only (drop internal ones)
-    display_cols = [
-        "age", "duration", "amount", "credit_history", "purpose",
-        "status", "savings", "employment_duration", "installment_rate",
-        "housing", "job", "property", "other_debtors",
-        "present_residence", "number_credits", "people_liable",
-        "personal_status_sex", "foreign_worker",
-        "credit_amount_per_duration", "credit_per_person",
-    ]
-    display_cols = [c for c in display_cols if c in raw_row.index]
+        # Select informative columns only (drop internal ones)
+        display_cols = [
+            "age", "duration", "amount", "credit_history", "purpose",
+            "status", "savings", "employment_duration", "installment_rate",
+            "housing", "job", "property", "other_debtors",
+            "present_residence", "number_credits", "people_liable",
+            "personal_status_sex", "foreign_worker",
+            "credit_amount_per_duration", "credit_per_person",
+        ]
+        display_cols = [c for c in display_cols if c in raw_row.index]
 
-    profile_df = pd.DataFrame(
-        {"Feature": display_cols, "Value": [str(raw_row[c]) for c in display_cols]}
-    )
-    st.dataframe(
-        profile_df.set_index("Feature"),
-        width="stretch",
-        height=min(600, len(display_cols) * 36 + 40),
-    )
+        profile_df = pd.DataFrame(
+            {"Feature": display_cols,
+             "Value":   [str(raw_row[c]) for c in display_cols]}
+        )
+        st.dataframe(
+            profile_df.set_index("Feature"),
+            width="stretch",
+            height=min(600, len(display_cols) * 36 + 40),
+        )
+    else:
+        # ─── Plaid live signals + provenance ───────────────────────────────
+        st.markdown(
+            '<div class="section-header">📡 &nbsp;Plaid Live Signals</div>',
+            unsafe_allow_html=True,
+        )
+        live = agent_state.raw_profile.get("_plaid_live_signals", {}) or {}
+        if live:
+            live_df = pd.DataFrame(
+                {"Signal": list(live.keys()),
+                 "Value":  [str(v) for v in live.values()]}
+            )
+            st.dataframe(
+                live_df.set_index("Signal"),
+                width="stretch",
+                height=min(320, len(live) * 36 + 40),
+            )
+        else:
+            st.caption("No live signals captured.")
+
+        st.markdown(
+            '<div class="section-header" style="margin-top:18px;">'
+            '🧾 &nbsp;Feature Provenance</div>',
+            unsafe_allow_html=True,
+        )
+        prov = agent_state.feature_provenance or {}
+        if prov:
+            # Bucket features by their source
+            groups: dict[str, list[str]] = {}
+            for feat, src in prov.items():
+                groups.setdefault(src, []).append(feat)
+
+            rows = []
+            for src_name in ("plaid", "application", "engineered", "default"):
+                if src_name not in groups:
+                    continue
+                rows.append({
+                    "Source": src_name,
+                    "Count":  len(groups[src_name]),
+                    "Features": ", ".join(sorted(groups[src_name])),
+                })
+            prov_df = pd.DataFrame(rows)
+            st.dataframe(
+                prov_df.set_index("Source"),
+                width="stretch",
+                height=min(220, len(rows) * 90 + 40),
+            )
+        else:
+            st.caption("No provenance metadata available.")
+
+        defs_used = agent_state.raw_profile.get("_plaid_defaults_used", []) or []
+        if defs_used:
+            st.caption(
+                f"ℹ️ Application / default values used for: "
+                f"**{', '.join(defs_used)}**"
+            )
 
 # ── footer ───────────────────────────────────────────────────────────────────
 st.markdown(
@@ -629,7 +875,7 @@ st.markdown(
     <hr style="border-color:#cfd8dc;margin:32px 0 12px 0"/>
     <div style="text-align:center;font-size:0.75rem;color:#90a4ae;">
       SAAi – Agentic AI Loan Risk Assessment &nbsp;|&nbsp;
-      German Credit Dataset (1000 samples) &nbsp;|&nbsp;
+      German Credit (1000) · Lending Club (CV) · Plaid Sandbox (live) &nbsp;|&nbsp;
       SHAP Explainability &nbsp;|&nbsp;
       Fairness-aware predictions
     </div>

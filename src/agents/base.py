@@ -39,6 +39,12 @@ class AgentState:
     raw_profile: dict[str, Any] = field(default_factory=dict)
     feature_names: list[str] = field(default_factory=list)
 
+    # Live-inference path (set only when data_source == "plaid") —
+    # a full 22-field feature dict ready for direct model scoring + a
+    # per-field provenance map showing what came from Plaid vs form vs default.
+    live_features: dict[str, Any] = field(default_factory=dict)
+    feature_provenance: dict[str, str] = field(default_factory=dict)
+
     # ── Populated by Risk Assessment Agent ──────────────────────────────────
     default_probability: float | None = None
     decision: str | None = None           # "APPROVED" | "REJECTED"

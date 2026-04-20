@@ -386,6 +386,44 @@ The Streamlit dashboard (`app.py`) now drives its decisions through the orchestr
 
 ---
 
+## Validation Suite
+
+Four independent validation scripts live under `src/validation/`. Each one
+prints a human-readable summary, writes a JSON report to
+`outputs/reports/validation/`, and exits with a non-zero status when checks
+fail (so they can be wired into CI).
+
+| Script | Purpose | Pass rule |
+|---|---|---|
+| `cross_validation.py` | K-fold CV on Lending Club (LR + RF) | CV(AUC) = std/mean < 0.05 |
+| `fairness_validation.py` | DPD + EOD on gender, age, foreign_worker (German Credit) | DPD ≤ 0.10 AND EOD ≤ 0.10 |
+| `explainability_validation.py` | SHAP top-5 features match domain expectations | ≥ 3 of top-5 in expected set |
+| `pipeline_validation.py` | End-to-end orchestrator smoke tests + determinism check | All per-borrower + global checks pass |
+
+### Run individually
+```bash
+python -m src.validation.cross_validation --k 5
+python -m src.validation.fairness_validation --threshold 0.10
+python -m src.validation.explainability_validation --min-overlap 3
+python -m src.validation.pipeline_validation --ids 1 25 50 100 150 200
+```
+
+### Run everything
+```bash
+python -m src.validation.run_all
+python -m src.validation.run_all --skip cross      # skip slow CV
+```
+
+Outputs land in:
+```
+outputs/reports/validation/
+├── cross_validation.json
+├── fairness_validation.json
+├── explainability_validation.json
+├── pipeline_validation.json
+└── combined_validation_report.json
+```
+
 ## Upcoming
 
 - **Task 7** — Full benchmark evaluation report and final presentation

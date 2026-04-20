@@ -51,22 +51,29 @@ class RiskAssessmentAgent(BaseAgent):
             raise ValueError(
                 "raw_profile missing — DataRetrievalAgent must run first."
             )
-        if state.borrower_id is None:
-            raise ValueError("borrower_id missing")
 
-        ctx      = get_context()
         model_key = state.model_used
         if model_key not in ("rf", "lr"):
             raise ValueError(f"model_used must be 'rf' or 'lr', got {model_key!r}")
 
-        m      = ctx[model_key]
-        probs  = m["probs"]
-        preds  = m["preds"]
-        prob   = float(probs[state.borrower_id])
-        pred   = int(preds[state.borrower_id])
+        # Branch A — Live Plaid path: compute probability on the fly.
+        if state.live_features:
+            from src.agents.live_inference import score_live
+            prob, _ = score_live(state.live_features, model=model_key)
+        # Branch B — Cached test-set path: look up precomputed probability.
+        else:
+            if state.borrower_id is None:
+                raise ValueError("borrower_id missing")
+            ctx = get_context()
+            m   = ctx[model_key]
+            prob = float(m["probs"][state.borrower_id])
 
-        # Look up which fairness threshold applied to this borrower (by group)
+        # Apply group-specific fairness threshold (falls back to 0.5 if no
+        # protected-attribute mapping is available, e.g. for Plaid borrowers
+        # without supplied demographics).
         threshold, group = self._lookup_threshold(state, model_key)
+        effective_thr    = threshold if threshold is not None else 0.5
+        pred = int(prob >= effective_thr)
 
         state.default_probability      = round(prob, 4)
         state.decision                 = "REJECTED" if pred == 1 else "APPROVED"

@@ -29,8 +29,7 @@ SANDBOX_INSTITUTIONS = {
 
 def _build_client(client_id: str, secret: str, environment: str = "sandbox") -> plaid_api.PlaidApi:
     env_map = {
-        "sandbox": plaid.Environment.Sandbox,
-        "development": plaid.Environment.Development,
+        "sandbox":    plaid.Environment.Sandbox,
         "production": plaid.Environment.Production,
     }
     configuration = plaid.Configuration(
@@ -147,12 +146,20 @@ class PlaidConnector:
         start_date: datetime.date | None = None,
         end_date: datetime.date | None = None,
         max_results: int = 500,
+        max_retries: int = 6,
+        retry_delay_s: float = 2.5,
     ) -> list[dict]:
         """
         Retrieve transactions for the given access token.
 
         Defaults to the full previous calendar year when no dates are supplied.
+
+        Retries automatically on PRODUCT_NOT_READY, which Plaid returns while
+        the sandbox item is still performing its initial transactions pull.
         """
+        import time
+        from plaid.exceptions import ApiException
+
         if end_date is None:
             end_date = datetime.date.today()
         if start_date is None:
@@ -165,7 +172,28 @@ class PlaidConnector:
             end_date=end_date,
             options=options,
         )
-        response = self.client.transactions_get(request)
+
+        response = None
+        last_err: ApiException | None = None
+        for attempt in range(max_retries):
+            try:
+                response = self.client.transactions_get(request)
+                break
+            except ApiException as e:
+                # Plaid returns PRODUCT_NOT_READY while the initial pull is still running.
+                if "PRODUCT_NOT_READY" in str(getattr(e, "body", "")):
+                    last_err = e
+                    time.sleep(retry_delay_s)
+                    continue
+                raise
+
+        if response is None:
+            raise RuntimeError(
+                f"transactions_get still PRODUCT_NOT_READY after "
+                f"{max_retries} attempts "
+                f"(~{int(max_retries * retry_delay_s)}s). "
+                f"Last error: {last_err}"
+            )
 
         transactions = []
         for txn in response["transactions"]:
