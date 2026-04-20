@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # ── page config (must be first Streamlit call) ───────────────────────────────
 st.set_page_config(
-    page_title="Loan Risk Assessment",
+    page_title="SAAi – Agentic AI Loan Risk Assessment",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -26,12 +26,47 @@ st.set_page_config(
 st.markdown(
     """
 <style>
+/* ---- native header: keep visible, style it, inject title via ::after ---- */
+[data-testid="stHeader"] {
+    background: #1a2332 !important;
+    border-bottom: 1px solid #2e3f55;
+}
+
+/* Title text injected into the header bar */
+[data-testid="stHeader"]::after {
+    content: "SAAi-  Agentic AI Loan Risk Assessment";
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 50%;
+    margin-top: -10px;
+    font-size: 1.50rem;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* Hide only the deploy button — KEEP the toolbar itself because the
+   sidebar expand button also lives inside it. */
+[data-testid="stAppDeployButton"] { display: none !important; }
+[data-testid="stMainMenu"] { display: none !important; }
+#MainMenu { display: none !important; }
+footer { display: none !important; }
+
 /* ---- global ---- */
 [data-testid="stAppViewContainer"] {
     background: #f0f4f8;
 }
+
+/* ---- sidebar ---- */
 [data-testid="stSidebar"] {
     background: #1a2332;
+}
+/* Remove Streamlit's default top padding so content starts flush at top */
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 0 !important;
 }
 [data-testid="stSidebar"] * {
     color: #e8edf3 !important;
@@ -39,6 +74,49 @@ st.markdown(
 [data-testid="stSidebar"] .stSlider label,
 [data-testid="stSidebar"] .stRadio label {
     color: #b0bec5 !important;
+}
+
+/* ---- sidebar collapse button (arrow inside sidebar when expanded) ---- */
+[data-testid="stSidebarCollapseButton"] button {
+    background: #2e3f55 !important;
+    border: 1px solid #3d5166 !important;
+    color: #ffffff !important;
+}
+[data-testid="stSidebarCollapseButton"] button svg {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover {
+    background: #1565c0 !important;
+}
+
+/* ---- sidebar EXPAND button (shows in header when sidebar is collapsed) ---- */
+/* The button element itself carries data-testid="stExpandSidebarButton" */
+[data-testid="stExpandSidebarButton"] {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: #1565c0 !important;
+    border: 2px solid #ffffff !important;
+    color: #ffffff !important;
+    border-radius: 50% !important;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    padding: 0 !important;
+    margin: 0 8px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+[data-testid="stExpandSidebarButton"] svg,
+[data-testid="stExpandSidebarButton"] * {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+[data-testid="stExpandSidebarButton"]:hover {
+    background: #1976d2 !important;
+    transform: scale(1.08);
 }
 
 /* ---- metric cards ---- */
@@ -231,21 +309,22 @@ def _factor_html(factors: list[dict], kind: str) -> str:
 with st.sidebar:
     st.markdown(
         """
-        <div style="text-align:center;padding:20px 0 10px 0;">
-          <span style="font-size:2.5rem;">🏦</span><br>
-          <span style="font-size:1.1rem;font-weight:700;color:#90caf9;">
-            Loan Risk AI
-          </span><br>
-          <span style="font-size:0.75rem;color:#607d8b;">
-            SHAP Explainability Dashboard
-          </span>
+        <div style="display:flex;align-items:center;gap:10px;
+                    padding:14px 4px 14px 4px;
+                    border-bottom:1px solid #2e3f55;margin-bottom:16px;">
+            <span style="font-size:1.8rem;line-height:1;">🏦</span>
+            <span style="font-size:0.95rem;font-weight:700;color:#ffffff;
+                         letter-spacing:0.02em;line-height:1.1;">
+                SAAi Loan Risk
+            </span>
         </div>
-        <hr style="border-color:#2e3f55;margin:10px 0 20px 0"/>
+        <div style="padding:0 0 4px 0;font-size:0.65rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:0.1em;color:#546e7a;">
+            Borrower Lookup
+        </div>
         """,
         unsafe_allow_html=True,
     )
-
-    st.markdown("#### Borrower Lookup")
     borrower_idx = st.number_input(
         "Borrower Index (test set)",
         min_value=0,
@@ -281,11 +360,9 @@ with st.sidebar:
 # ── main panel ───────────────────────────────────────────────────────────────
 st.markdown(
     """
-    <h1 style="font-size:1.8rem;font-weight:800;color:#1a2332;margin-bottom:4px;">
-      Loan Risk Assessment
-    </h1>
-    <p style="color:#78909c;font-size:0.95rem;margin-bottom:24px;">
-      AI-powered credit decision with SHAP explainability
+    <p style="color:#78909c;font-size:0.88rem;margin-bottom:20px;margin-top:-4px;">
+      AI-powered credit decision with SHAP explainability &nbsp;·&nbsp;
+      German Credit Dataset &nbsp;·&nbsp; Fairness-aware predictions
     </p>
     """,
     unsafe_allow_html=True,
@@ -372,11 +449,17 @@ with col_metrics:
     protective_factors = result["protective_factors"]
     top_risk   = risk_factors[0]["factor"]   if risk_factors   else "—"
     top_safe   = protective_factors[0]["factor"] if protective_factors else "—"
-    correct    = (
-        ("✓ Correct" if (is_rejected and actual == 1) or (not is_rejected and actual == 0)
-         else "✗ Wrong")
-    )
-    correct_color = "#2e7d32" if correct.startswith("✓") else "#c62828"
+    # Compare model prediction against historical ground truth
+    pred_correct = (is_rejected and actual == 1) or (not is_rejected and actual == 0)
+    if pred_correct:
+        correct_label    = "✓ Correct"
+        correct_subtitle = ("True Positive" if is_rejected else "True Negative")
+    else:
+        correct_label    = "✗ Incorrect"
+        # False Positive: rejected someone who would have paid back
+        # False Negative: approved someone who actually defaulted
+        correct_subtitle = ("False Positive" if is_rejected else "False Negative")
+    correct_color = "#2e7d32" if pred_correct else "#c62828"
 
     c1, c2 = st.columns(2)
     with c1:
@@ -401,9 +484,13 @@ with col_metrics:
         st.markdown(
             f"""
             <div class="metric-card" style="margin-bottom:12px;">
-              <div class="metric-title">Prediction</div>
-              <div class="metric-value" style="font-size:1.1rem;color:{correct_color};">
-                {correct}
+              <div class="metric-title">Prediction vs Ground Truth</div>
+              <div class="metric-value" style="font-size:1.05rem;color:{correct_color};">
+                {correct_label}
+              </div>
+              <div style="font-size:0.72rem;color:#78909c;margin-top:2px;
+                          font-weight:500;letter-spacing:0.02em;">
+                {correct_subtitle}
               </div>
             </div>
             <div class="metric-card">
@@ -476,13 +563,20 @@ with col_wf:
         paper_bgcolor="white",
         plot_bgcolor="white",
         xaxis=dict(
-            title="SHAP value  (red = risk ↑  |  green = risk ↓)",
-            title_font_size=11,
+            title=dict(
+                text="SHAP value  (red = risk ↑  |  green = risk ↓)",
+                font=dict(size=12, color="#37474f"),
+            ),
+            tickfont=dict(size=11, color="#37474f"),
             gridcolor="#eceff1",
+            zeroline=False,
         ),
-        yaxis=dict(automargin=True, tickfont=dict(size=11)),
+        yaxis=dict(
+            automargin=True,
+            tickfont=dict(size=12, color="#263238"),
+        ),
         bargap=0.25,
-        font={"family": "Inter, sans-serif"},
+        font=dict(family="Inter, sans-serif", color="#263238"),
     )
     st.plotly_chart(fig_bar, width="stretch", config={"displayModeBar": False})
 

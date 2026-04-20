@@ -11,9 +11,10 @@ An Agentic AI Framework for Multi-Source Loan Risk Assessment and Fair Lending D
 | 1 | Multi-agent architecture (Data Retrieval, Risk Assessment, Explanation Generator) | In Progress |
 | 2 | Heterogeneous data integration via MCP (Plaid + datasets) | Done |
 | 3 | Fair and bias-aware credit scoring models | Done |
-| 4 | Explainable AI with SHAP | Planned |
-| 5 | RAG system for policy compliance | Planned |
-| 6 | Full evaluation (accuracy, fairness, efficiency) | Planned |
+| 4 | Explainable AI with SHAP + human-readable borrower explanations | Done |
+| 5 | Interactive Streamlit dashboard UI | Done |
+| 6 | RAG system for policy compliance | Planned |
+| 7 | Full evaluation (accuracy, fairness, efficiency) | Planned |
 
 ---
 
@@ -23,7 +24,7 @@ An Agentic AI Framework for Multi-Source Loan Risk Assessment and Fair Lending D
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+source .venv/bin/activate   OR . venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -42,9 +43,41 @@ Download and place in `data/raw/`:
 
 ### 4. Run the full pipeline
 
+Runs all 7 steps: clean → validate → feature-engineer → borrower profiles → train/evaluate with fairness thresholds → SHAP explainability → human-readable borrower explanations.
+
 ```bash
 python run_pipeline.py
 ```
+
+### 5. Launch the interactive dashboard
+
+After the pipeline has completed at least once (so models are saved in `outputs/models/`), launch the UI:
+
+```bash
+streamlit run app.py
+```
+
+Open the URL shown in the terminal (default: http://localhost:8501) to explore borrower-by-borrower SHAP explanations in a browser.
+
+---
+
+## Interactive Dashboard (`app.py`)
+
+A Streamlit-based UI for exploring model decisions and SHAP explanations.
+
+| Section | What it shows |
+|---------|---------------|
+| Top header (navy bar) | Project title "SAAi – Agentic AI Loan Risk Assessment" |
+| Left sidebar | Borrower index input (0–249), model selector (RF/LR), factor-count slider |
+| Decision card | Borrower ID, APPROVED / REJECTED badge, model used, ground-truth outcome |
+| Gauge chart | Default probability + risk level (Very Low → Very High) |
+| Metric cards | Default probability, prediction vs ground truth (True Positive / False Positive / etc.), top risk factor, top protective factor |
+| Risk factors (red) | Top N features pushing the applicant toward default, with SHAP bars |
+| Protective factors (green) | Top N features pushing toward approval |
+| Full SHAP chart | Horizontal bar chart of every feature's SHAP value (red/green) |
+| Borrower profile | Raw feature values for the selected applicant |
+
+Change the borrower index or model in the sidebar and the entire dashboard updates instantly. The first page load triggers model + SHAP loading (~10 s); subsequent lookups are instant (cached with `@st.cache_resource`).
 
 ---
 
@@ -155,13 +188,16 @@ Output saved to `outputs/reports/evaluation_report.json`.
 ├── outputs/
 │   ├── features/          # Engineered features CSV
 │   ├── borrower_profiles/ # Per-borrower JSON profiles
-│   ├── models/            # Saved .pkl model files
-│   └── reports/           # evaluation_report.json
+│   ├── models/            # Saved .pkl model files + fairness_thresholds.json
+│   └── reports/           # evaluation_report.json, shap_report.json,
+│                          # borrower_explanations_rf.json, shap/ plots
 ├── src/
 │   ├── data_integration/
 │   │   ├── datasets.py
+│   │   ├── data_validation.py      # schema, completeness, consistency, fairness checks
 │   │   ├── feature_engineering.py
 │   │   ├── build_borrower_profile.py
+│   │   ├── augment_data.py          # SMOTE-style synthetic augmentation
 │   │   └── plaid_connector.py
 │   ├── mcp_tools/
 │   │   ├── __init__.py    # ALL_TOOLS registry
@@ -169,13 +205,17 @@ Output saved to `outputs/reports/evaluation_report.json`.
 │   ├── models/
 │   │   ├── credit_model.py
 │   │   ├── fairness.py
-│   │   └── evaluate.py
+│   │   ├── bias_mitigation.py       # post-processing threshold adjustment
+│   │   ├── evaluate.py
+│   │   ├── shap_explainer.py        # global + local SHAP plots
+│   │   └── explain_borrower.py      # SHAP → plain-English narratives
 │   └── utils/
 │       ├── config.py
 │       └── logger.py
+├── app.py                  # Streamlit dashboard (streamlit run app.py)
 ├── .env.example
 ├── requirements.txt
-└── run_pipeline.py        # Full pipeline entry point
+└── run_pipeline.py         # Full pipeline entry point (7 steps)
 ```
 
 ---
@@ -202,8 +242,63 @@ While the model performs well in prediction accuracy, there is a trade-off betwe
 - Evaluation report: `outputs/reports/evaluation_report.json`
 - Trained models stored in: `outputs/models/`
 
+---
+
+## Week 5: SHAP Explainability + Bias Mitigation + Interactive UI
+
+### SHAP Explainability (`src/models/shap_explainer.py`)
+
+- `shap.TreeExplainer` for Random Forest, `shap.LinearExplainer` for Logistic Regression
+- **Global plots:** feature-importance bar + beeswarm distribution (per model)
+- **Local plots:** waterfall diagrams for correctly-approved, correctly-rejected, and wrongly-approved borrowers
+- **Protected-attribute impact plot:** shows how much `age` and `personal_status_sex` individually drive each decision
+- Output: `outputs/reports/shap/*.png` + `outputs/reports/shap_report.json`
+
+### Human-Readable Borrower Explanations (`src/models/explain_borrower.py`)
+
+Converts raw SHAP values into plain-English sentences:
+
+```
+LOAN DECISION: REJECTED (predicted default)
+Default Probability: 90.7%  |  Risk Level: Very High Risk
+
+TOP REASONS THIS APPLICATION WAS FLAGGED:
+  1. Checking account status (no checking account) slightly increases default risk.
+  2. Loan duration (7 months) slightly increases default risk.
+  3. Savings account (no savings account) marginally increases default risk.
+
+FACTORS IN THE APPLICANT'S FAVOUR:
+  1. Property / assets (life insurance / savings plan) marginally reduces default risk.
+  ...
+```
+
+CLI:
+```bash
+python -m src.models.explain_borrower 100        # explain borrower #100 (RF)
+python -m src.models.explain_borrower 100 --lr   # use Logistic Regression
+python -m src.models.explain_borrower            # batch: all 250 test borrowers
+```
+
+### Bias Mitigation (`src/models/bias_mitigation.py`)
+
+Post-processing two-phase threshold optimisation:
+- **Phase 1:** minimise Equalized Odds Difference across groups (TPR + FPR squared loss)
+- **Phase 2:** greedy Demographic Parity correction
+- Small groups (n < 20) merged with nearest large group to avoid noise
+- Group-specific thresholds saved to `outputs/models/fairness_thresholds.json`
+- `predict_fair()` is the **only** production prediction method — raw `model.predict()` is no longer used
+
+### Interactive Streamlit Dashboard (`app.py`)
+
+See the [Interactive Dashboard](#interactive-dashboard-apppy) section above. Launch with:
+
+```bash
+streamlit run app.py
+```
+
+---
+
 ## Upcoming
 
-- **Task 5** — SHAP explainability module + RAG pipeline for policy compliance
 - **Task 6** — Multi-agent orchestrator (Data Retrieval → Risk Assessment → Explanation Generator)
-- **Task 7** — Demo application and full benchmark evaluation report
+- **Task 7** — Full benchmark evaluation report and final presentation

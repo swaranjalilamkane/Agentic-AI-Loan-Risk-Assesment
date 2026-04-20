@@ -15,3 +15,7 @@ shap
 # Visualisation (reports + SHAP plots)
 matplotlib
 seaborn
+
+# Interactive dashboard UI (Task 5)
+streamlit
+plotly
